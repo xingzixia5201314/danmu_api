@@ -3,37 +3,15 @@
   "wallpaper": "https://img.qovv.cn/2024/04/28/662e5b8749c16.jpg",
   "sites": [
     {
-      "key": "hdhive_custom",
+      "key": "Hdhive",
       "name": "影巢🚜私享4K",
       "type": 3,
-      "api": "csp_XYQHiker",
+      "api": "csp_Hdh",
       "searchable": 1,
       "quickSearch": 1,
       "filterable": 1,
-      "ext": {
-        "site": "https://hdhive.com",
-        "danmu": true,
-        "indexs": 0,
-        "tabs": [
-          {"name": "电影", "ext": "/movie"},
-          {"name": "剧集", "ext": "/tv"},
-          {"name": "动漫", "ext": "/anime"}
-        ],
-        "list": "div.MuiGrid-item",
-        "title": "h6.MuiTypography-root",
-        "img": "img.MuiCardMedia-root/@src",
-        "desc": "div.MuiCardContent-root/p.MuiTypography-root",
-        "url": "a.MuiButtonBase-root/@href",
-        "detail": {
-          "title": "h4.MuiTypography-root",
-          "img": "img.MuiBox-root/@src",
-          "desc": "p.MuiTypography-body1",
-          "content": "div.MuiTypography-body2",
-          "from": "div.MuiTabs-flexContainer/button",
-          "url": "div.MuiTabPanel-root/a/@href"
-        },
-        "search": "/search?q={wd}"
-      }
+      "timeout": 60,
+      "ext": "https://github.com/hjdhnx/dr_py/raw/main/lib/token.json$$$https://hdhive.online$$$noproxy$$$1"
     }
   ]
 }
