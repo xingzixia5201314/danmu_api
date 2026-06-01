@@ -25,6 +25,30 @@ export default class BahamutSource extends BaseSource {
         log("info", `[Bahamut] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
       }
 
+      // 筛选出含有 video_sn 的本地匹配项
+      const localWithVideoSn = localMatches.filter(m => m.video_sn);
+
+      // 数据源直通模式：Bangumi-Data 本地数据完全覆盖时，跳过巴哈姆特搜索接口（零网络请求）
+      if (localMatches.length > 0 && localMatches.length === localWithVideoSn.length) {
+        log("info", `[Bahamut] Bangumi-Data 本地命中均含 video_sn，启用数据源直通模式（跳过搜索接口）`);
+        return localMatches.map(m => {
+          const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
+          const finalTitle = displayTitle + (m.titleSuffix || '');
+          return {
+            video_sn: parseInt(m.video_sn),
+            title: finalTitle,
+            _displayTitle: finalTitle,
+            isLocalPriority: true,
+            aliases: [...m.titles],
+            _typeStr: m.typeStr,
+            _fromDataSourceDirectHit: true, // 标记来源于数据源直通模式
+            _originalQuery: keyword,
+            // 保留 begin 年份供 handleAnimes 使用
+            _bangumiBegin: m.begin || null
+          };
+        });
+      }
+
       // 在函数内部进行简转繁
       const traditionalizedKeyword = traditionalized(keyword);
       const tmdbSearchKeyword = keyword;
@@ -364,14 +388,19 @@ export default class BahamutSource extends BaseSource {
       }
     }
 
-    // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
+    // 同一调用内对相同 video_sn 去重（缓存 Promise 避免并发竞态）
+    const episodeCache = new Map();
     const processBahamutAnimes = await Promise.all(matchedAnimes.map(async (anime) => {
       try {
-        const epData = await this.getEpisodes(anime.video_sn);
+        // 复用同一 video_sn 的在途 Promise 避免重复请求
+        const cacheKey = String(anime.video_sn);
+        if (!episodeCache.has(cacheKey)) {
+          episodeCache.set(cacheKey, this.getEpisodes(anime.video_sn));
+        }
+        const epData = await episodeCache.get(cacheKey);
         const detail = epData.video;
 
-        // 处理 episodes 对象中的多个键（"0", "1", "2" 等）
-        // 某些内容（如电影）可能在不同的键中
+        // episodes 可能在不同键中（如 "0"、"1"），电影类内容尤其常见
         let eps = null;
         if (epData.anime.episodes) {
           // 优先使用 "0" 键，如果不存在则使用第一个可用的键
@@ -391,7 +420,27 @@ export default class BahamutSource extends BaseSource {
         }
 
         if (links.length > 0) {
-          let yearMatch = (anime.info || "").match(/(\d{4})/);
+          // 年份优先级：bangumi-data begin > 详情接口 seasonStart/upTime > 搜索接口 info
+          let resolvedYear = null;
+          if (anime._bangumiBegin) {
+            resolvedYear = parseInt(anime._bangumiBegin.substring(0, 4));
+          }
+          if (!resolvedYear && epData.anime && epData.anime.seasonStart) {
+            resolvedYear = new Date(epData.anime.seasonStart).getFullYear();
+          }
+          if (!resolvedYear && detail && detail.upTime) {
+            const upTimeStr = String(detail.upTime);
+            const upTimeMatch = upTimeStr.match(/(\d{4})/);
+            if (upTimeMatch) resolvedYear = parseInt(upTimeMatch[1]);
+          }
+          if (!resolvedYear) {
+            // 最后降级到搜索接口的 info 字段
+            const yearMatch = (anime.info || "").match(/(\d{4})/);
+            if (yearMatch) resolvedYear = parseInt(yearMatch[1]);
+          }
+
+          // 封面优先级：动漫主封面(anime) > 搜索接口 cover > 单集封面(video)
+          const resolvedCover = (epData.anime && epData.anime.cover) || anime.cover || (detail && detail.cover) || "";
 
           // 优先使用tmdb智能标题替换的标题，否则简转繁处理原标题
           const displayTitle = anime._displayTitle || simplized(anime.title);
@@ -403,7 +452,7 @@ export default class BahamutSource extends BaseSource {
           }
 
           // 优先使用本地数据标注的精准类型，如果不存在则使用原版默认类型兜底
-          let itemType = anime._typeStr || "动漫"; 
+          let itemType = anime._typeStr || "动漫";
           const fullTitle = (epData.anime && epData.anime.title) || (detail && detail.title) || "";
 
           if (fullTitle.includes("[電影]")) {
@@ -415,12 +464,12 @@ export default class BahamutSource extends BaseSource {
           let transformedAnime = {
             animeId: anime.video_sn,
             bangumiId: String(anime.video_sn),
-            animeTitle: `${displayTitle}(${(anime.info.match(/(\d{4})/) || [null])[0]})【${itemType}】from bahamut`,
+            animeTitle: `${displayTitle}(${resolvedYear || 'N/A'})【${itemType}】from bahamut`,
             aliases: aliases,
             type: "动漫",
             typeDescription: "动漫",
-            imageUrl: anime.cover,
-            startDate: generateValidStartDate(new Date(epData.anime.seasonStart).getFullYear()),
+            imageUrl: resolvedCover,
+            startDate: resolvedYear ? generateValidStartDate(resolvedYear) : generateValidStartDate(epData.anime.seasonStart ? new Date(epData.anime.seasonStart).getFullYear() : null),
             episodeCount: links.length,
             rating: detail.rating,
             isFavorited: true,

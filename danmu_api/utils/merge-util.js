@@ -1835,7 +1835,7 @@ function getMatchingCustomRule(pAnime, sAnime) {
  * 完整匹配流程：
  *   0. 映射表特权检测（最高优先级：强制放行并标记，或直接 block 阻断）
  *   1. 上下文感知续作检测（阻断 S1 vs S2 的错误关联）
- *   2. 全局越界阻断（防范映射表动态源污染常规匹配）
+ *   2. 组级权限沙箱阻断（防范映射表动态源跨组污染常规匹配）
  *   3. 各类冲突检测（媒体类型、之字结构、剧场版、日期、季度）
  *   4. 主副别名交叉比对 + 综合相似度计算
  *   5. 集内容 Probe（可覆盖相似度）
@@ -1844,9 +1844,10 @@ function getMatchingCustomRule(pAnime, sAnime) {
  * @param {Object} primaryAnime        - 主源番剧对象
  * @param {Array}  secondaryList       - 副源列表（同源内）
  * @param {Set}    [collectionAnimeIds=new Set()] - 合集 ID 集合
+ * @param {Array}  [baseSecondaries=[]] - 当前组的基础原生副源配置（用于权限沙箱）
  * @returns {Array} 通过筛选的候选对象数组（按分数降序）
  */
-export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnimeIds = new Set()) {
+export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnimeIds = new Set(), baseSecondaries = []) {
     if (!secondaryList || secondaryList.length === 0) return [];
 
     // [性能优化] 提取循环不变量，避免在内层循环中重复计算
@@ -1901,10 +1902,9 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
             continue; // 命中特权规则直接跳过后续所有的之字结构、剧场版、维度冲突等检测
         }
 
-        // 校验全局配对权限：防范映射表动态注入的源污染常规匹配
-        const isGlobalPair = (globals.mergeSourcePairs || []).some(g => g.primary === primaryAnime.source && g.secondaries.includes(secAnime.source));
-        if (!isGlobalPair) {
-            logReason(rawSecTitle, `未在全局源合并(MERGE_SOURCE_PAIRS)中配置此组合，且未命中特权映射规则，越权阻断`);
+        // 校验配对权限：动态注入的源若未命中特权规则，则阻断，防止跨组污染常规匹配。
+        if (!baseSecondaries.includes(secAnime.source)) {
+            logReason(rawSecTitle, `该来源为映射表动态注入，且未命中特权规则，受限于权限沙箱予以阻断`);
             continue;
         }
 
@@ -2278,13 +2278,14 @@ function detectCollectionCandidates(curAnimes) {
  * @param {Set}    params.collectionAnimeIds    - 合集 ID 集合
  * @param {Set}    [params.allowReuseIds]       - 允许复用的 ID 集合（Part 资源复用全集副源）
  * @param {Map}    [params.collectionProgress]  - 合集进度记录（跨 Phase 共享）
+ * @param {Array}  [params.baseSecondaries]     - 当前组的基础原生副源配置
  * @returns {Promise<Object|null>} 合并后的新对象，失败时返回 null
  */
 async function processMergeTask(params) {
     const {
         pAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
         generatedSignatures, epFilter, groupFingerprint, currentPrimarySource, logPrefix,
-        limitSecondaryLang, collectionAnimeIds, allowReuseIds, collectionProgress
+        limitSecondaryLang, collectionAnimeIds, allowReuseIds, collectionProgress, baseSecondaries
     } = params;
 
     // 合集副源保护：合集作为副源已被消费时不再作为主源重复触发
@@ -2378,7 +2379,7 @@ async function processMergeTask(params) {
             });
         }
         if (secondaryItems.length === 0) continue;
-        const matchesForSource = findSecondaryMatches(pAnime, secondaryItems, collectionAnimeIds);
+        const matchesForSource = findSecondaryMatches(pAnime, secondaryItems, collectionAnimeIds, baseSecondaries);
         allMatches.push(...matchesForSource);
     }
 
@@ -2994,12 +2995,18 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
         dynamicPairsMap.get(pSrc).add(sSrc);
     }
 
-    // 将映射表规则混入执行组内，提供纯净模式特权运行通道
-    let groups = [...baseGroups];
+    // 将基础组复制为执行组，并记录 baseSecondaries 用于执行期权限隔离
+    let groups = baseGroups.map(bg => ({
+        primary: bg.primary,
+        secondaries: [...bg.secondaries],
+        baseSecondaries: [...bg.secondaries]
+    }));
+
+    // 将映射表规则混入执行组内，提供特权运行通道
     for (const [pSrc, sSrcs] of dynamicPairsMap.entries()) {
         let existing = groups.find(g => g.primary === pSrc);
         if (!existing) {
-            existing = { primary: pSrc, secondaries: [] };
+            existing = { primary: pSrc, secondaries: [], baseSecondaries: [] };
             groups.push(existing);
         }
         for (const sSrc of sSrcs) {
@@ -3111,7 +3118,8 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                     pAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
                     currentPrimarySource: pAnime.source, logPrefix: `[Merge][Phase 1: CN-Strict]`,
-                    limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress
+                    limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress,
+                    baseSecondaries: group.baseSecondaries
                 });
                 if (resultAnime) {
                     newMergedAnimes.push(resultAnime);
@@ -3141,7 +3149,8 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                     pAnime: tAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
                     currentPrimarySource: tAnime.source, logPrefix: `[Merge][Phase 1.5: CN-Secondary]`,
-                    limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress
+                    limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress,
+                    baseSecondaries: group.baseSecondaries
                 });
                 if (resultAnime) {
                     newMergedAnimes.push(resultAnime);
@@ -3191,7 +3200,8 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                     pAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
                     currentPrimarySource: pAnime.source, logPrefix: `[Merge][Phase 2: Standard]`,
-                    collectionAnimeIds, allowReuseIds, collectionProgress
+                    collectionAnimeIds, allowReuseIds, collectionProgress,
+                    baseSecondaries: group.baseSecondaries
                 });
                 if (resultAnime) {
                     newMergedAnimes.push(resultAnime);

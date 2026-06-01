@@ -296,23 +296,21 @@ export function titleMatches(title, query, parsedSeason = null) {
   }
 
   // 策略3：相似度匹配 (阈值0.8)
-  const tSet = new Set(t); // 提取到循环外，避免重复创建
-
   return qList.some(kw => {
-    // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略
+    // 长度差异过大，或纯英文/数字时，禁止使用相似度计算策略
     if (Math.abs(t.length - kw.length) > Math.max(t.length, kw.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(kw)) {
-      return false; 
+      return false;
     }
+
     // 核心相似度计算：解决"和/与"等翻译差异
     let matchCount = 0;
-    // 将标题转为数组以实现字符消耗逻辑，避免同一字符被重复匹配
-    const tChars = Array.from(t); 
+    let tIndex = 0;
 
     for (const char of kw) {
-      const idx = tChars.indexOf(char);
-      if (idx !== -1) {
+      const foundIdx = t.indexOf(char, tIndex);
+      if (foundIdx !== -1) {
         matchCount++;
-        tChars[idx] = null; 
+        tIndex = foundIdx + 1;
       }
     }
 

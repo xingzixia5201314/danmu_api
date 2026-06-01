@@ -19,11 +19,32 @@ let memoryFootprintMB = '0.00';
 let hasLoggedCacheWarning = false;
 let charInvertedIndex = new Map();
 
+// 当前生效的数据源标识 ('custom' | 'official')
+let activeDataSource = 'custom';
+// 缓存已解析的版本号（进程内有效）
+let cachedCustomVersion = null;
+let cachedOfficialVersion = null;
+
 // 定义缓存目录/文件名
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILENAME = 'bangumi-data-cache.json';
 const DOWNLOAD_TIMEOUT_MS = 20000;
 const queryCache = new Map();
+
+// CDN 节点配置：自定义优先，官方备用
+const CDN_SOURCES = {
+  custom: [
+    "https://cdn.jsdelivr.net/npm/@wan0ge/bangumi-data@0.3/dist/data.json",
+    "https://unpkg.com/@wan0ge/bangumi-data@0.3/dist/data.json"
+  ],
+  official: [
+    "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
+    "https://unpkg.com/bangumi-data@0.3/dist/data.json"
+  ]
+};
+
+const CUSTOM_PACKAGE = '@wan0ge/bangumi-data';
+const OFFICIAL_PACKAGE = 'bangumi-data';
 
 // 预编译全局正则表达式
 const VALID_DUB_REGEX = /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/;
@@ -59,6 +80,103 @@ function buildInvertedIndex(items) {
     }
 
     charInvertedIndex = newCharIndex;
+}
+
+/**
+ * 解析语义化版本号
+ * 支持标准 semver 格式 (major.minor.patch)
+ * @param {string} versionStr 版本字符串（如 "0.3.208", "0.3.209"）
+ * @returns {{major:number, minor:number, patch:number}|null} 解析结果
+ */
+function parseSemanticVersion(versionStr) {
+    if (!versionStr || typeof versionStr !== 'string') return null;
+
+    const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return null;
+
+    return {
+        major: parseInt(match[1], 10),
+        minor: parseInt(match[2], 10),
+        patch: parseInt(match[3], 10)
+    };
+}
+
+/**
+ * 比较两个语义化版本号
+ * 标准-semver 逐段数值比较
+ * @param {string} verA 版本A
+ * @param {string} verB 版本B
+ * @returns {number} 正数表示 A>B, 负数表示 A<B, 0 表示相等
+ */
+function compareVersions(verA, verB) {
+    const a = parseSemanticVersion(verA);
+    const b = parseSemanticVersion(verB);
+    if (!a || !b) return 0;
+
+    if (a.major !== b.major) return a.major - b.major;
+    if (a.minor !== b.minor) return a.minor - b.minor;
+    if (a.patch !== b.patch) return a.patch - b.patch;
+
+    return 0;
+}
+
+/**
+ * 从 npm registry 查询包的最新版本号
+ * @param {string} packageName npm 包名
+ * @returns {Promise<string|null>} 版本号或 null
+ */
+async function fetchNpmLatestVersion(packageName) {
+    try {
+        const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`;
+        log("info", `[请求模拟] HTTP GET: ${url}`);
+        const response = await fetch(url, {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data?.version || null;
+    } catch (e) {
+        log("warn", `[Bangumi-Data] 查询 ${packageName} 版本号失败: ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * 智能选择数据源：比较自定义构建与官方版本的版本号决定使用哪个
+ *
+ * 切换规则：
+ * - 自定义版本 >= 官方版本 → 使用自定义源（正常维护状态）
+ * - 官方版本 > 自定义版本 → 切换到官方源（自定义已停止维护）
+ * - 版本查询失败 → 默认使用自定义源
+ *
+ * @returns {Promise<'custom'|'official'>} 应使用的数据源标识
+ */
+async function selectBestDataSource() {
+    try {
+        const [customVer, officialVer] = await Promise.all([
+            cachedCustomVersion || fetchNpmLatestVersion(CUSTOM_PACKAGE),
+            cachedOfficialVersion || fetchNpmLatestVersion(OFFICIAL_PACKAGE)
+        ]);
+
+        if (customVer) cachedCustomVersion = customVer;
+        if (officialVer) cachedOfficialVersion = officialVer;
+
+        if (!customVer || !officialVer) {
+            log("info", `[Bangumi-Data] 版本检测不完整 (custom=${customVer}, official=${officialVer})，默认使用自定义源`);
+            return 'custom';
+        }
+
+        const cmp = compareVersions(customVer, officialVer);
+        const selected = cmp >= 0 ? 'custom' : 'official';
+
+        log("info", `[Bangumi-Data] 版本对比: @wan0ge/bangumi-data@${customVer} vs bangumi-data@${officialVer} => 使用${selected === 'custom' ? '自定义' : '官方'}源`);
+
+        return selected;
+    } catch (e) {
+        log("warn", `[Bangumi-Data] 数据源选择异常，回退到自定义源: ${e.message}`);
+        return 'custom';
+    }
 }
 
 /**
@@ -211,7 +329,12 @@ function pruneBangumiData(rawData) {
             for (const s of item.sites) {
                 if (ALLOWED_SITES.has(s.site)) {
                     const prunedSite = { site: s.site, id: s.id };
+                    // 提取 bilibili 系列站点的 season_id 字段
+                    if (s.season_id) prunedSite.season_id = String(s.season_id);
+                    // 提取 gamer/gamer_hk 站点的 video_sn 字段
+                    if (s.video_sn) prunedSite.video_sn = String(s.video_sn);
                     if (s.comment) prunedSite.comment = s.comment;
+                    if (s.related) prunedSite.related = s.related;
                     validSites.push(prunedSite);
                 }
             }
@@ -258,24 +381,20 @@ async function downloadAndCache(cachePath) {
     log("info", "[Bangumi-Data] 开始优选节点下载最新数据并执行精简...");
     try {
         const memBefore = process.memoryUsage().heapUsed;
-        const startTime = Date.now(); 
+        const startTime = Date.now();
 
         let parseTimeMs = 0;
 
-        // 备选 CDN 节点列表
-        const CDNS = [
-            "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
-            "https://unpkg.com/bangumi-data@0.3/dist/data.json"
-        ];
+        // 每次重新下载时检测版本号以选择数据源
+        activeDataSource = await selectBestDataSource();
+        const CDNS = CDN_SOURCES[activeDataSource] || CDN_SOURCES.custom;
 
-        // 声明压缩头，提升传输效率
         const fetchOptions = {
             headers: {
                 'Accept-Encoding': 'br, gzip, deflate'
             }
         };
 
-        // 为每个请求分配独立的终止控制器
         const controllers = CDNS.map(() => new AbortController());
 
         CDNS.forEach(url => {
@@ -564,6 +683,13 @@ export async function searchBangumiData(keyword, siteKeys) {
 
             if (matchedSite.comment) {
                 const dubs = matchedSite.comment.split(COMMA_SPLIT_REGEX);
+                // 从 related 数组建立 id → season_id 查找表，供衍生配音条目使用
+                const relatedMap = new Map();
+                if (matchedSite.related && Array.isArray(matchedSite.related)) {
+                    for (const r of matchedSite.related) {
+                        if (r.id) relatedMap.set(String(r.id), r.season_id || null);
+                    }
+                }
                 for (const dub of dubs) {
                     const parts = dub.split(COLON_SPLIT_REGEX);
                     if (parts.length >= 2) {
@@ -572,7 +698,8 @@ export async function searchBangumiData(keyword, siteKeys) {
                             additionalDubs.push({
                                 title: item.title, titles: [...titles], begin: item.begin,
                                 siteId: dubId, matchedSiteKey: matchedSite.site,
-                                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: ` ${dubName}${baseSuffix}`
+                                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: ` ${dubName}${baseSuffix}`,
+                                season_id: relatedMap.get(dubId) || null
                             });
                         }
                     } else if (parts.length === 1 && parts[0].trim()) {
@@ -592,7 +719,11 @@ export async function searchBangumiData(keyword, siteKeys) {
             results.push({
                 title: item.title, titles: [...titles], begin: item.begin,
                 siteId: matchedSite.id, matchedSiteKey: matchedSite.site,
-                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: currentItemSuffix 
+                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: currentItemSuffix,
+                // 传递 bilibili 系列站点的 season_id 供直接构建分集请求
+                season_id: matchedSite.season_id || null,
+                // 传递 gamer/gamer_hk 站点的 video_sn 供直接获取详情
+                video_sn: matchedSite.video_sn || null
             });
 
             // 推送提取出的衍生条目

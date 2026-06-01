@@ -40,7 +40,7 @@ export async function httpGet(url, options = {}) {
     }
 
     // 设置超时时间（默认5秒）
-    const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
+    const timeout = parseInt(options.timeout || globals.vodRequestTimeout || '5000', 10) || 5000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -609,7 +609,7 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
   const { headers = {}, sniffLimit } = options;
   // 默认限制为 32KB
   const SNIFF_LIMIT = parseInt(sniffLimit || '32768', 10) || 32768;
-  const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
+  const timeout = parseInt(options.timeout || globals.vodRequestTimeout || '5000', 10) || 5000;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
