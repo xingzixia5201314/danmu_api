@@ -27,20 +27,29 @@ export function toLogSourceName(sourceKey) {
 // =====================
 
 /**
- * 将外部中断信号链接到内部控制器
+ * 将外部中断信号链接到内部控制器，并返回内存清理函数
  * @param {AbortSignal} externalSignal 外部传入的信号
  * @param {AbortController} internalController 内部使用的控制器
+ * @returns {Function} 监听器清理闭包
  */
 function linkSignal(externalSignal, internalController) {
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      internalController.abort();
-    } else {
-      externalSignal.addEventListener('abort', () => {
-        internalController.abort();
-      }, { once: true });
-    }
+  if (!externalSignal) return () => {};
+
+  if (externalSignal.aborted) {
+    internalController.abort();
+    return () => {};
   }
+
+  const abortHandler = () => {
+    internalController.abort();
+  };
+
+  externalSignal.addEventListener('abort', abortHandler, { once: true });
+
+  // 返回注销函数，供请求结束后的 finally 块调用，阻断内存泄漏链
+  return () => {
+    externalSignal.removeEventListener('abort', abortHandler);
+  };
 }
 
 export async function httpGet(url, options = {}) {
@@ -57,8 +66,13 @@ export async function httpGet(url, options = {}) {
 
     if (attempt > 0) {
       log("info", `[${currentSource}] [请求模拟] 第 ${attempt} 次重试: ${url}`);
-      // 可选：添加重试延迟（指数退避）
-      await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
+      // 针对网络层物理阻断（如 ETIMEDOUT, ECONNRESET, AbortError）取消长退避，实现快速重试
+      // 常规服务端报错（如 502, 429）保持指数退避逻辑
+      if (lastError && (lastError.cause?.code === 'ETIMEDOUT' || lastError.cause?.code === 'ECONNRESET' || lastError.name === 'AbortError')) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
+      }
     } else {
       log("info", `[${currentSource}] [请求模拟] HTTP GET: ${url}`);
     }
@@ -68,8 +82,8 @@ export async function httpGet(url, options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    // 链接外部中断信号
-    linkSignal(options.signal, controller);
+    // 链接外部中断信号并获取清理函数
+    const cleanupSignal = linkSignal(options.signal, controller);
 
     try {
       // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
@@ -233,6 +247,9 @@ export async function httpGet(url, options = {}) {
         log("info", `[${currentSource}] [请求模拟] 准备重试...`);
         continue;
       }
+    } finally {
+      // 请求生命周期结束，释放监听器内存引用
+      cleanupSignal();
     }
   }
 
@@ -254,8 +271,13 @@ export async function httpPost(url, body, options = {}) {
 
     if (attempt > 0) {
       log("info", `[${currentSource}] [请求模拟] 第 ${attempt} 次重试: ${url}`);
-      // 可选：添加重试延迟（指数退避）
-      await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
+      // 针对网络层物理阻断（如 ETIMEDOUT, ECONNRESET, AbortError）取消长退避，实现快速重试
+      // 常规服务端报错（如 502, 429）保持指数退避逻辑
+      if (lastError && (lastError.cause?.code === 'ETIMEDOUT' || lastError.cause?.code === 'ECONNRESET' || lastError.name === 'AbortError')) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
+      }
     } else {
       log("info", `[${currentSource}] [请求模拟] HTTP POST: ${url}`);
     }
@@ -265,8 +287,8 @@ export async function httpPost(url, body, options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    // 链接外部中断信号
-    linkSignal(options.signal, controller);
+    // 链接外部中断信号并获取清理函数
+    const cleanupSignal = linkSignal(options.signal, controller);
 
     // 处理请求头、body 和其他参数
     const { headers = {}, params, allow_redirects = true } = options;
@@ -358,6 +380,9 @@ export async function httpPost(url, body, options = {}) {
         log("info", `[${currentSource}] [请求模拟] 准备重试...`);
         continue;
       }
+    } finally {
+      // 请求生命周期结束，释放监听器内存引用
+      cleanupSignal();
     }
   }
 
@@ -647,8 +672,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  // 链接外部中断信号
-  linkSignal(options.signal, controller);
+  // 链接外部中断信号并获取清理函数
+  const cleanupSignal = linkSignal(options.signal, controller);
 
   try {
     const currentSource = sourceLogContext.getStore() || "system";
@@ -748,5 +773,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
     }
     log("error", `[${currentSource}] [流式请求] 失败: ${error.message}`);
     return null;
+  } finally {
+    // 流式请求执行完毕或被熔断拦截，释放监听器内存引用
+    cleanupSignal();
   }
 }

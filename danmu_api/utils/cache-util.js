@@ -518,12 +518,21 @@ export function removeEarliestAnime() {
 // 将所有动漫的 animeId 存入 lastSelectMap 的 animeIds 数组中
 export function storeAnimeIdsToMap(curAnimes, key) {
     const uniqueAnimeIds = new Set();
+    
+    const oldValue = globals.lastSelectMap.get(key);
+    
+    // 保留旧的 animeIds，确保包含全量季度的 ID 列表不被单季度搜索结果覆盖
+    if (oldValue && Array.isArray(oldValue.animeIds)) {
+        for (const id of oldValue.animeIds) {
+            uniqueAnimeIds.add(id);
+        }
+    }
+
     for (const anime of curAnimes) {
         uniqueAnimeIds.add(anime.animeId);
     }
 
     // 保存旧的 prefer/source/offsets（兼容旧结构）
-    const oldValue = globals.lastSelectMap.get(key);
     const oldPrefer = oldValue?.prefer;
     const oldSource = oldValue?.source;
     const oldPreferBySeason = oldValue?.preferBySeason;
@@ -565,9 +574,10 @@ export function storeAnimeIdsToMap(curAnimes, key) {
 export function findAnimeIdByCommentId(commentId) {
   const resolved = resolveEpisodeContextById(commentId);
   if (resolved) {
-    return [resolved.anime.animeId, resolved.anime.source, resolved.link.title];
+    // 返回别名列表以支持跨源标题差异的偏好记录校验
+    return [resolved.anime.animeId, resolved.anime.source, resolved.link.title, resolved.anime.aliases || []];
   }
-  return [null, null, null];
+  return [null, null, null, []];
 }
 
 // 通过 animeId 查找 lastSelectMap 中 animeIds 包含该 animeId 的 key，并设置其 prefer 为 animeId

@@ -322,10 +322,11 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
     aiyifan: animesAiyifan, animeko: animesAnimeko
   } = resultData;
 
-  // 源Key到handleAnimes调用Promise的映射（每个源使用独立的curAnimes和detailStore）
+  // 仅处理resultData中存在数据的源，避免将undefined传入handleAnimes
+  const activeSourceKeys = globals.sourceOrderArr.filter(key => resultData[key] !== undefined);
   const sourceTasks = [];
 
-  for (const key of globals.sourceOrderArr) {
+  for (const key of activeSourceKeys) {
     const isolatedAnimes = [];
     const isolatedDetailStore = new Map();
 
@@ -466,7 +467,17 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
 
   // 检查搜索缓存
-  const cachedResults = getSearchCache(cacheKey, requestAnimeDetailsMap);
+  let cachedResults = getSearchCache(cacheKey, requestAnimeDetailsMap);
+
+  // 如果带季度的特定缓存未命中，尝试获取不带季度的通用搜索缓存
+  if (cachedResults === null && querySeason !== null) {
+    const genericCachedResults = getSearchCache(queryTitle, requestAnimeDetailsMap);
+    if (genericCachedResults !== null) {
+      log("info", `[system] [searchAnime] Cache miss for ${cacheKey}, fallback to generic cache for ${queryTitle}`);
+      cachedResults = genericCachedResults;
+    }
+  }
+
   if (cachedResults !== null) {
     let satisfied = checkEpisodeSatisfied(cachedResults, querySeason, queryEpisode, requestAnimeDetailsMap, targetPlatform);
     if (satisfied) {
@@ -586,46 +597,80 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   }
 
   try {
-    // 根据 sourceOrderArr 动态构建请求数组
+    // 根据 sourceOrderArr 动态构建逐源管道：每个源形成独立的 search → handleAnimes 流水线
     log("info", `[system] [LogVar-API] Search sourceOrderArr: ${globals.sourceOrderArr}`);
-    const requestPromises = globals.sourceOrderArr.map(source => {
-      return sourceLogContext.run(toLogSourceName(source), () => {
-      if (source === "360") return kan360Source.search(queryTitle);
-      if (source === "vod") return vodSource.search(queryTitle, preferAnimeId, preferSource);
-      if (source === "tmdb") return tmdbSource.search(queryTitle);
-      if (source === "douban") return doubanSource.search(queryTitle);
-      if (source === "renren") return renrenSource.search(queryTitle);
-      if (source === "hanjutv") return hanjutvSource.search(queryTitle);
-      if (source === "bahamut") return bahamutSource.search(queryTitle);
-      if (source === "dandan") return dandanSource.search(queryTitle);
-      if (source === "custom") return customSource.search(queryTitle);
-      if (source === "tencent") return tencentSource.search(queryTitle);
-      if (source === "youku") return youkuSource.search(queryTitle);
-      if (source === "iqiyi") return iqiyiSource.search(queryTitle);
-      if (source === "imgo") return mangoSource.search(queryTitle);
-      if (source === "bilibili") return bilibiliSource.search(queryTitle);
-      if (source === "migu") return miguSource.search(queryTitle);
-      if (source === "sohu") return sohuSource.search(queryTitle);
-      if (source === "leshi") return leshiSource.search(queryTitle);
-      if (source === "xigua") return xiguaSource.search(queryTitle);
-      if (source === "maiduidui") return maiduiduiSource.search(queryTitle);
-      if (source === "aiyifan") return aiyifanSource.search(queryTitle);
-      if (source === "animeko") return animekoSource.search(queryTitle);
-    }); });
 
-    // 执行所有请求并等待结果
-    const results = await Promise.all(requestPromises);
-
-    // 创建一个对象来存储返回的结果
+    // 存储各源搜索结果的容器，供S2+季度扩展逻辑读取
     const resultData = {};
 
-    // 动态根据 sourceOrderArr 顺序将结果赋值给对应的来源
-    globals.sourceOrderArr.forEach((source, index) => {
-      resultData[source] = results[index];  // 根据顺序赋值
+    // 源Key到对应搜索Promise的映射
+    const sourceSearchMap = {};
+    for (const source of globals.sourceOrderArr) {
+      if (source === "360") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => kan360Source.search(queryTitle));
+      else if (source === "vod") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => vodSource.search(queryTitle, preferAnimeId, preferSource));
+      else if (source === "tmdb") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => tmdbSource.search(queryTitle));
+      else if (source === "douban") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => doubanSource.search(queryTitle));
+      else if (source === "renren") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => renrenSource.search(queryTitle));
+      else if (source === "hanjutv") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => hanjutvSource.search(queryTitle));
+      else if (source === "bahamut") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => bahamutSource.search(queryTitle));
+      else if (source === "dandan") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => dandanSource.search(queryTitle));
+      else if (source === "custom") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => customSource.search(queryTitle));
+      else if (source === "tencent") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => tencentSource.search(queryTitle));
+      else if (source === "youku") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => youkuSource.search(queryTitle));
+      else if (source === "iqiyi") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => iqiyiSource.search(queryTitle));
+      else if (source === "imgo") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => mangoSource.search(queryTitle));
+      else if (source === "bilibili") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => bilibiliSource.search(queryTitle));
+      else if (source === "migu") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => miguSource.search(queryTitle));
+      else if (source === "sohu") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => sohuSource.search(queryTitle));
+      else if (source === "leshi") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => leshiSource.search(queryTitle));
+      else if (source === "xigua") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => xiguaSource.search(queryTitle));
+      else if (source === "maiduidui") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => maiduiduiSource.search(queryTitle));
+      else if (source === "aiyifan") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => aiyifanSource.search(queryTitle));
+      else if (source === "animeko") sourceSearchMap[source] = sourceLogContext.run(toLogSourceName(source), () => animekoSource.search(queryTitle));
+    }
+
+    // 构建逐源管道：每个源 search 完成后，通过 executeSourceHandlers 处理 handleAnimes
+    // 传入仅含当前源数据的 resultData，使 executeSourceHandlers 仅处理该源
+    const pipelineTasks = globals.sourceOrderArr.map(source => {
+      const isolatedAnimes = [];
+      const isolatedDetailStore = new Map();
+      const pipelinePromise = sourceSearchMap[source].then(async searchResult => {
+        resultData[source] = searchResult;
+        await executeSourceHandlers({ [source]: searchResult }, queryTitle, isolatedAnimes, isolatedDetailStore, querySeason, preferAnimeId, preferSource);
+      });
+      return { key: source, animes: isolatedAnimes, detailStore: isolatedDetailStore, promise: pipelinePromise };
     });
 
-    // 优先处理指定的季度（或全量）
-    await executeSourceHandlers(resultData, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason, preferAnimeId, preferSource);
+    // 并发执行所有逐源管道，每个管道内部 search 完成后立即衔接 handleAnimes
+    const pipelineResults = await Promise.allSettled(pipelineTasks.map(task => task.promise));
+
+    // 按SOURCE_ORDER顺序合并各管道的独立结果到目标容器
+    // 先处理的源数据优先保留（animeId去重、detailStore键去重）
+    const existingAnimeIds = new Set(curAnimes.map(a => a.animeId));
+
+    for (let i = 0; i < pipelineTasks.length; i++) {
+      if (pipelineResults[i].status === 'rejected') {
+        log("error", `[system] [searchAnime] 源 ${pipelineTasks[i].key} 管道处理失败: ${pipelineResults[i].reason}`);
+        continue;
+      }
+
+      const { animes: isolatedAnimes, detailStore: isolatedDetailStore } = pipelineTasks[i];
+
+      // 合并动漫结果列表（使用 Set 确保 O(1) 检索，优先源先入为主）
+      for (const anime of isolatedAnimes) {
+        if (!existingAnimeIds.has(anime.animeId)) {
+          curAnimes.push(anime);
+          existingAnimeIds.add(anime.animeId);
+        }
+      }
+
+      // 合并详情缓存（键去重，先到先得）
+      for (const [key, value] of isolatedDetailStore) {
+        if (!requestAnimeDetailsMap.has(key)) {
+          requestAnimeDetailsMap.set(key, value);
+        }
+      }
+    }
 
     // 缓存首季/默认请求结果，剥离附加链接
     if (curAnimes.length > 0) {
@@ -1185,6 +1230,10 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
 
     let matchedEpisode = null;
 
+    // 判定当前循环的 anime 是否为用户手动指定的优选偏好
+    const isPreferredAnime = globals.rememberLastSelect && preferAnimeId != null && 
+        (String(anime.bangumiId) === String(preferAnimeId) || String(anime.animeId) === String(preferAnimeId));
+
     if (season && episode) {
         // 剧集模式逻辑
         const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
@@ -1199,8 +1248,14 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
           targetEpisode = computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode);
         }
 
-        // 匹配集数 (注意：findEpisodeByNumber 已增强支持模糊平台匹配)
+        // 匹配集数
         matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform);
+
+        // 如果当前是用户的优选偏好，但由于平台配置限制导致未命中目标平台，则放宽条件无视平台限制提取集数
+        if (!matchedEpisode && isPreferredAnime) {
+            log("info", `[system] [Match] 优选剧集未命中目标平台 ${platform}，放宽条件提取集数`);
+            matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null);
+        }
     } else {
         // 电影模式逻辑
         if (bangumiData.bangumi.episodes.length > 0) {
@@ -1213,6 +1268,9 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
                 
                 if (targetEp) {
                     matchedEpisode = targetEp;
+                } else if (isPreferredAnime) {
+                    log("info", `[system] [Match] 优选电影未命中目标平台 ${platform}，放宽条件提取资源`);
+                    matchedEpisode = bangumiData.bangumi.episodes[0];
                 }
             } else {
                 matchedEpisode = bangumiData.bangumi.episodes[0];
@@ -1234,6 +1292,11 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
             currentScore = 1;
         }
 
+        // 赋予手动指定偏好最高分数权重，确保其在多源匹配中具有绝对优先级
+        if (isPreferredAnime) {
+            currentScore += 9999;
+        }
+
         // 比较并更新最佳结果
         // 逻辑：如果有更好的分数，或者之前没有匹配到任何结果，则更新
         if (currentScore > bestRes.score) {
@@ -1244,9 +1307,8 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
             };
         }
 
-        // 如果没有指定平台偏好 (platform 为空)，则保持原版行为：
-        // 找到第一个符合条件的就立刻返回，不进行后续比较
-        if (!platform) {
+        // 如果没有指定平台偏好 (platform 为空) 或已命中最高优先级的手动优选，立刻跳出查找
+        if (!platform || isPreferredAnime) {
             break; 
         }
         
@@ -2017,7 +2079,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     }
   }
 
-  const [animeId, source, episodeTitle] = findAnimeIdByCommentId(commentId);
+  const [animeId, source, episodeTitle, animeAliases] = findAnimeIdByCommentId(commentId);
   if (animeId && source) {
     let lastTitle = null;
     let lastSeason = null;
@@ -2035,7 +2097,11 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
 
     log("info", `[system] [LogVar-API] animeTitle：${animeTitle}; lastTitle：${lastTitle}; titleMatches：${titleMatches(animeTitle, lastTitle)}`);
 
-    if (titleMatches(animeTitle, lastTitle)) {
+    // 校验番剧标题或别名是否匹配最新搜索/匹配上下文，别名检查用于兼容不同源对同一番剧的标题命名差异
+    const titleOrAliasMatches = titleMatches(animeTitle, lastTitle) ||
+        (Array.isArray(animeAliases) && animeAliases.some(alias => titleMatches(alias, lastTitle)));
+
+    if (titleOrAliasMatches) {
       log("info", `[system] [LogVar-API] excute setPreferByAnimeId`);
       setPreferByAnimeId(animeId, source, lastSeason, offset);
     }

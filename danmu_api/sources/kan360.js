@@ -26,9 +26,9 @@ export default class Kan360Source extends BaseSource {
         );
 
         const data = await response.data;
-        log("info", `[360kan] 360kan zongyi response: ${JSON.stringify(data)}`);
-
         const episodeList = data.data.list;
+        log("info", `[360kan] 360kan zongyi response: 第${j}页获取到${episodeList ? episodeList.length : 0}条剧集`);
+
         if (!episodeList) {
           break;
         }
@@ -208,13 +208,13 @@ export default class Kan360Source extends BaseSource {
       );
 
       const data = response.data;
-      log("info", `[360kan] 360kan response: ${JSON.stringify(data)}`);
 
       let tmpAnimes = [];
       if ('rows' in data.data.longData) {
         tmpAnimes = data.data.longData.rows;
       }
 
+      log("info", `[360kan] 360kan response: ${JSON.stringify(tmpAnimes)}`);
       log("info", `[360kan] 360kan animes.length: ${tmpAnimes.length}`);
 
       return tmpAnimes;
