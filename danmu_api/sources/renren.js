@@ -398,8 +398,16 @@ export default class RenrenSource extends BaseSource {
 
       return list.map((item) => {
         let aliases = [];
-        if (item.highlights && item.highlights.alias) {
-          aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+        if (item.highlights) {
+          if (item.highlights.alias) {
+            aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+          }
+          if (item.highlights.original_name) {
+            const originalName = item.highlights.original_name.replace(/<[^>]+>/g, "").trim();
+            if (originalName && !aliases.includes(originalName)) {
+              aliases.push(originalName);
+            }
+          }
         }
         return {
           provider: "renren",
@@ -442,8 +450,16 @@ export default class RenrenSource extends BaseSource {
 
       return list.map(item => {
         let aliases = [];
-        if (item.highlights && item.highlights.alias) {
-          aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+        if (item.highlights) {
+          if (item.highlights.alias) {
+            aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+          }
+          if (item.highlights.original_name) {
+            const originalName = item.highlights.original_name.replace(/<[^>]+>/g, "").trim();
+            if (originalName && !aliases.includes(originalName)) {
+              aliases.push(originalName);
+            }
+          }
         }
         return {
           provider: "renren",
@@ -492,8 +508,16 @@ export default class RenrenSource extends BaseSource {
       // 数据模型装载器
       const processItem = (item) => {
         let aliases = [];
-        if (item.highlights && item.highlights.alias) {
-          aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+        if (item.highlights) {
+          if (item.highlights.alias) {
+            aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+          }
+          if (item.highlights.original_name) {
+            const originalName = item.highlights.original_name.replace(/<[^>]+>/g, "").trim();
+            if (originalName && !aliases.includes(originalName)) {
+              aliases.push(originalName);
+            }
+          }
         }
         return {
           provider: "renren",
@@ -565,8 +589,16 @@ export default class RenrenSource extends BaseSource {
 
       return list.map((item) => {
         let aliases = [];
-        if (item.highlights && item.highlights.alias) {
-          aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+        if (item.highlights) {
+          if (item.highlights.alias) {
+            aliases = item.highlights.alias.split(',').map(s => s.trim().replace(/<[^>]+>/g, "")).filter(Boolean);
+          }
+          if (item.highlights.original_name) {
+            const originalName = item.highlights.original_name.replace(/<[^>]+>/g, "").trim();
+            if (originalName && !aliases.includes(originalName)) {
+              aliases.push(originalName);
+            }
+          }
         }
         return {
           provider: "renren",
