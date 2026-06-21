@@ -311,7 +311,7 @@ export default class AnimekoSource extends BaseSource {
     if (globals.useBangumiData) {
       const localMatches = await searchBangumiData(keyword, ['bangumi']);
       if (localMatches.length > 0) {
-        log("info", `[Animeko] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
+        log("info", `[Animeko] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
         const mapped = localMatches.map(m => {
           const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
           const finalTitle = displayTitle + (m.titleSuffix || '');

@@ -5,7 +5,7 @@ import { httpGet, httpGetWithStreamCheck } from "../utils/http-util.js";
 import { parseDanmakuBase64, md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { simplized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
@@ -281,7 +281,7 @@ export default class BilibiliSource extends BaseSource {
       localMatches = await searchBangumiData(keyword, [
         'bilibili', 'bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw'
       ]);
-      log("info", `[Bilibili] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
+      log("info", `[Bilibili] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
     }
 
     // 筛选出港澳台相关的本地匹配项
@@ -679,8 +679,14 @@ export default class BilibiliSource extends BaseSource {
                };
              });
 
-             // 依据底层数据主键 ep_id 进行时间序列升序排列
-             links.sort((a, b) => a._id - b._id);
+             // 优先从 index_title 提取集号排序，任一无法提取则退回到 ep_id 排序
+             const sortKeys = links.map(l => extractEpisodeNumberFromTitle(l.name));
+             if (sortKeys.every(k => k !== null)) {
+               links.forEach((l, i) => l._sortKey = sortKeys[i]);
+               links.sort((a, b) => a._sortKey - b._sortKey);
+             } else {
+               links.sort((a, b) => a._id - b._id);
+             }
 
              log("info", `[Bilibili] 直接使用搜索结果中的 ${links.length} 集分集`);
           } else {
