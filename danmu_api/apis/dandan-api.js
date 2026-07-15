@@ -440,6 +440,12 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
 // Extracted function for GET /api/v2/search/anime
 export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null) {
   let queryTitle = url.searchParams.get("keyword");
+
+  // 搜索词杂音清理：移除画质/配音/版本等杂音词后再提交源站搜索
+  if (globals.titleNoiseFilter) {
+    queryTitle = queryTitle.replace(globals.titleNoiseFilter, '').trim();
+  }
+
   let querySeason = url.searchParams.get("season");
   querySeason = querySeason ? parseInt(querySeason, 10) : null;
   let queryEpisode = url.searchParams.get("episode");
@@ -1528,6 +1534,11 @@ export async function matchAnime(url, req, clientIp) {
       const simplifiedTitle = simplized(title);
       log("info", `[system] [Match] matchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
       title = simplifiedTitle;
+    }
+
+    // 剧名杂音清理：移除画质/配音/版本等杂音词
+    if (globals.titleNoiseFilter) {
+      title = title.replace(globals.titleNoiseFilter, '').trim();
     }
 
     // 获取 prefer animeId（按 season 维度）
