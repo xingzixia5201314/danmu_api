@@ -560,13 +560,12 @@ export default class IqiyiSource extends BaseSource {
       if (data.data && data.data.base_data) {
         const baseData = data.data.base_data;
 
-        // 尝试 1: 从 share_url 中提取（最可靠）
+        // 尝试 1: 从 share_url 中提取（旧格式 v_xxx.html）
         if (baseData.share_url) {
           const match = baseData.share_url.match(/v_(\w+)\.html/);
           if (match) {
-            const videoId = match[1];
-            log("info", `[iQiyi] 从 share_url 提取视频ID: ${videoId}`);
-            return videoId;
+            log("info", `[iQiyi] 从 share_url 提取视频ID: ${match[1]}`);
+            return match[1];
           }
         }
 
@@ -574,16 +573,16 @@ export default class IqiyiSource extends BaseSource {
         if (baseData.page_url) {
           const match = baseData.page_url.match(/v_(\w+)\.html/);
           if (match) {
-            const videoId = match[1];
-            log("info", `[iQiyi] 从 page_url 提取视频ID: ${videoId}`);
-            return videoId;
+            log("info", `[iQiyi] 从 page_url 提取视频ID: ${match[1]}`);
+            return match[1];
           }
         }
       }
 
-      log("error", "[iQiyi] base_info API 响应中未找到视频ID");
+      // 所有尝试均失败，使用 qipuId（entity_id）作为视频ID
+      log("info", `[iQiyi] 响应中未找到 v_xxx 格式视频ID，使用 entity_id: ${qipuId}`);
       log("info", `[iQiyi] 响应数据结构: ${JSON.stringify(data).substring(0, 1000)}...`);
-      return null;
+      return qipuId;
 
     } catch (error) {
       log("error", `[iQiyi] 获取电影视频ID时出错: ${error.message}`);
@@ -813,7 +812,7 @@ export default class IqiyiSource extends BaseSource {
     const api_video_info = "https://pcw-api.iqiyi.com/video/video/baseinfo/";
 
     // 解析 URL 获取 tvid
-    let tvid;
+    let tvid, originalTvid;
     try {
       const idMatch = id.match(/v_(\w+)/);
       if (!idMatch) {
@@ -825,6 +824,7 @@ export default class IqiyiSource extends BaseSource {
       }
       tvid = idMatch[1];
       log("info", `[iQiyi] tvid: ${tvid}`);
+      originalTvid = tvid; // 保存原始 tvid，用于解码失败回退
 
       // 获取 tvid 的解码信息
       const decodeUrl = `${api_decode_base}${tvid}?platformId=3&modeCode=intl&langCode=sg`;
@@ -869,6 +869,31 @@ export default class IqiyiSource extends BaseSource {
       log("info", `[iQiyi] 时长: ${duration}`);
     } catch (error) {
       log("error", "[iQiyi] 请求视频基础信息失败:", error);
+    }
+
+    // decode API 输出的 tvid 无效时（duration=0 或请求失败），用原始 tvid 重试
+    if (!duration && originalTvid && originalTvid !== tvid) {
+      log("info", `[iQiyi] decode 后 tvid 无效，用原始 tvid 重试: ${originalTvid}`);
+      try {
+        const retryUrl = `${api_video_info}${originalTvid}`;
+        const retryRes = await httpGet(retryUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+        });
+        const retryData = typeof retryRes.data === "string" ? JSON.parse(retryRes.data) : retryRes.data;
+        const retryDuration = Number(retryData.data.durationSec) || 0;
+        if (retryDuration > 0) {
+          tvid = originalTvid;
+          duration = retryDuration;
+          log("info", `[iQiyi] 原始 tvid 有效，时长: ${duration}`);
+        }
+      } catch (retryError) {
+        log("error", "[iQiyi] 原始 tvid 重试也失败:", retryError);
+      }
+    }
+    if (!duration) {
       return new SegmentListResponse({
         "type": "qiyi",
         "segmentList": []
