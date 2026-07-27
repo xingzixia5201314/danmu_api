@@ -74,8 +74,8 @@ export default class IqiyiSource extends BaseSource {
       let data = await doSearch();
       for (let attempt = 0; attempt < MAX_RETRIES && (!data || data.code === "-1"); attempt++) {
         const reason = !data ? "搜索响应为空" : `搜索接口风控 (code=${data.code})`;
-        log("info", `[iQiyi] ${reason}，等待 1.5 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
-        await new Promise(r => setTimeout(r, 1500));
+        log("info", `[iQiyi] ${reason}，等待 3 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 3000));
         data = await doSearch();
       }
 
@@ -196,13 +196,11 @@ export default class IqiyiSource extends BaseSource {
         return null;
       }
 
-      // 提取年份
+      // 提取年份（普通结果卡片在 year 字段，意图聚合卡片 template 112 无 year 字段，年份在 superscript 角标）
       let year = null;
-      if (album.year) {
-        const yearStr = album.year.value || album.year.name;
-        if (yearStr && typeof yearStr === 'string' && yearStr.length === 4 && /^\d{4}$/.test(yearStr)) {
-          year = parseInt(yearStr);
-        }
+      const yearStr = (album.year && (album.year.value || album.year.name)) || album.superscript;
+      if (yearStr && typeof yearStr === 'string' && /^\d{4}$/.test(yearStr)) {
+        year = parseInt(yearStr);
       }
 
       // 清理标题
@@ -234,13 +232,11 @@ export default class IqiyiSource extends BaseSource {
     }
     const linkId = linkIdMatch[1];
 
-    // 提取年份
+    // 提取年份（普通结果卡片在 year 字段，意图聚合卡片 template 112 无 year 字段，年份在 superscript 角标）
     let year = null;
-    if (album.year) {
-      const yearStr = album.year.value || album.year.name;
-      if (yearStr && typeof yearStr === 'string' && yearStr.length === 4 && /^\d{4}$/.test(yearStr)) {
-        year = parseInt(yearStr);
-      }
+    const yearStr = (album.year && (album.year.value || album.year.name)) || album.superscript;
+    if (yearStr && typeof yearStr === 'string' && /^\d{4}$/.test(yearStr)) {
+      year = parseInt(yearStr);
     }
 
     // 提取分集数
