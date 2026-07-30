@@ -56,32 +56,36 @@ function getLogCategory(message) {
 }
 
 // 日志相关
+// 判断日志视图是否处于可见状态，用于避免在非日志页面产生无谓的全量 DOM 重建
+function isLogViewVisible() {
+    const section = document.getElementById('logs-section');
+    return !!section && section.classList.contains('active');
+}
+
 function addLog(message, type = 'info') {
     const timestamp = new Date().toLocaleTimeString();
     logs.push({ timestamp, message, type, _category: getLogCategory(message) });
     if (logs.length > 100) logs.shift();
-    renderLogs();
+    // 仅当日志视图可见时才重建 DOM；切到其他页面期间产生的日志仅追加到数组，回到日志视图并重新渲染时再统一呈现，避免每次切换区块都全量重建
+    if (isLogViewVisible()) {
+        renderLogs();
+    }
 }
 
 function renderLogs() {
     const container = document.getElementById('log-container');
     const filterContainer = document.getElementById('log-filters') || createFilterContainer();
     
-    let filteredLogs = logs;
-    if (currentLogFilter !== 'ALL') {
-        // 采用严格归属校验，同时支持续行上下文继承
-        let lastCategory = 'system';
-        filteredLogs = logs.filter(log => {
-            let category = log._category;
-            if (category === '_inherit_') {
-            } else {
-                lastCategory = category;
-            }
-            return category === currentLogFilter;
-        });
-    }
-
-    container.innerHTML = filteredLogs.map(log => {
+    // 全量日志一次性构建 DOM，归属分类解析后写入 data-category 供筛选显隐使用，续行继承上一行的分类，保证筛选时上下文完整
+    let lastCategory = 'system';
+    container.innerHTML = logs.map(log => {
+        let category = log._category;
+        if (category === '_inherit_') {
+            category = lastCategory;
+        } else {
+            lastCategory = category;
+        }
+        
         let highlightedMessage = log.message;
         
         // 行首连续标签高亮 (需双重转义)
@@ -93,11 +97,22 @@ function renderLogs() {
             highlightedMessage = coloredPrefix + rest;
         }
         
-        return \`<div class="log-entry \${log.type}">[\${log.timestamp}] \${highlightedMessage}</div>\`;
+        return \`<div class="log-entry \${log.type}" data-category="\${category}">[\${log.timestamp}] \${highlightedMessage}</div>\`;
     }).join('');
+    applyLogFilter();
     container.scrollTop = container.scrollHeight;
     
     updateFilterUI();
+}
+
+// 按当前筛选分类切换日志行显隐，复用已构建的 DOM 而不重建
+function applyLogFilter() {
+    const container = document.getElementById('log-container');
+    const showAll = currentLogFilter === 'ALL';
+    const entries = container.children;
+    for (let i = 0; i < entries.length; i++) {
+        entries[i].classList.toggle('log-entry-hidden', !showAll && entries[i].dataset.category !== currentLogFilter);
+    }
 }
 
 function createFilterContainer() {
@@ -147,7 +162,11 @@ function updateFilterUI() {
 
 window.setLogFilter = function(tag) {
     currentLogFilter = tag;
-    renderLogs();
+    // 切换筛选仅调整已有日志行的显隐，不重建 DOM
+    applyLogFilter();
+    const container = document.getElementById('log-container');
+    container.scrollTop = container.scrollHeight;
+    updateFilterUI();
 };
 
 // 从API获取真实日志数据

@@ -244,6 +244,10 @@ export default class TencentSource extends BaseSource {
       for (const item of itemList) {
         const filtered = this.filterTencentSearchItem(item, keyword);
         if (filtered) {
+          // 综艺等分季内容将各季收在 videoInfo.episodeSites/playSites 的 chapterInfo 下，
+          // 提取每季的 pageContext 供 getEpisodes 逐季补全分集
+          const chapters = this.extractChapterContexts(item.videoInfo);
+          if (chapters.length > 0) filtered.chapterContexts = chapters;
           results.push(filtered);
         }
       }
@@ -257,7 +261,50 @@ export default class TencentSource extends BaseSource {
     }
   }
 
-  async getEpisodes(id) {
+  // 从 videoInfo 的 episodeSites/playSites 中提取各季章节标题，用于综艺等多季内容逐季补全分集
+  extractChapterContexts(videoInfo) {
+    const chapters = [];
+    if (!videoInfo) return chapters;
+    const sites = [...(videoInfo.episodeSites || []), ...(videoInfo.playSites || [])];
+    for (const site of sites) {
+      if (site && site.chapterInfo && Array.isArray(site.chapterInfo.chapters)) {
+        for (const ch of site.chapterInfo.chapters) {
+          if (ch && ch.title) {
+            chapters.push({ title: ch.title });
+          }
+        }
+      }
+    }
+    return chapters;
+  }
+
+  // 子分类式章节仅取“正片”子分类：该值直接作为请求参数 chapter_name 发往分页接口，
+  // 与 tabs 分页路径以 chapter_name=正片 标识正片的方式一致；其余子分类（花絮/直播回放/彩蛋等）不请求。
+  isZhengpianChapter(ch) {
+    return !!ch && ch.title === "正片";
+  }
+
+  // 将季标题(如 2021冬)转为可排序的时间键，用于多季按时间先后排列；
+  // 取标题中首个四位年份为高位，并以 春=1/夏=2/秋=3/冬=4 的播出季序为低位。
+  seasonOrderKey(title) {
+    if (!title) return 0;
+    const yearMatch = title.match(/(?:19|20)\d{2}/);
+    const year = yearMatch ? parseInt(yearMatch[0], 10) : 0;
+    const seasonWeight = { "春": 1, "夏": 2, "秋": 3, "冬": 4 };
+    let season = 0;
+    for (const name of Object.keys(seasonWeight)) {
+      if (title.includes(name)) { season = seasonWeight[name]; break; }
+    }
+    return year * 10 + season;
+  }
+
+  // 按分页 tabs 下发的 page_context 结构构造章节请求参数；
+  // chapterInfo 自带的 pageContext 缺少 cid/page_num/req_type 等必填项，服务端会忽略并回落默认视图
+  buildChapterPageContext(cid, chapterName, pageNum) {
+    return `lid=&cid=${cid}&page_num=${pageNum}&page_size=30&id_type=1&req_type=6&req_from=web_vsite&req_from_second_type=&detail_page_type=1&year=&tab_type=4&chapter_name=${chapterName}&is_nocopyright=false`;
+  }
+
+  async getEpisodes(id, chapterContexts = []) {
     try {
       log("info", `[tencent] 获取分集列表: cid=${id}`);
 
@@ -324,6 +371,7 @@ export default class TencentSource extends BaseSource {
 
       // 获取所有分页的分集
       const allEpisodes = [];
+      const seenVids = new Set();
 
       if (tabs.length === 0) {
         log("info", "[tencent] 未找到分页信息,尝试从初始响应中提取分集");
@@ -335,14 +383,95 @@ export default class TencentSource extends BaseSource {
               if (moduleData.item_data_lists && moduleData.item_data_lists.item_datas) {
                 for (const item of moduleData.item_data_lists.item_datas) {
                   if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
-                    allEpisodes.push({
-                      vid: item.item_params.vid,
-                      title: item.item_params.title,
-                      unionTitle: item.item_params.union_title || item.item_params.title
-                    });
+                    if (!seenVids.has(item.item_params.vid)) {
+                      seenVids.add(item.item_params.vid);
+                      allEpisodes.push({
+                        vid: item.item_params.vid,
+                        title: item.item_params.title,
+                        unionTitle: item.item_params.union_title || item.item_params.title
+                      });
+                    }
                   }
                 }
               }
+            }
+          }
+        }
+
+        // 综艺等分季内容：各季收在 chapterInfo 下，逐季分页请求并合并
+        if (chapterContexts.length > 0) {
+          // 章节本身为子分类(正片/花絮)时仅取正片子分类；否则按季遍历
+          const zhengpianChapters = chapterContexts.filter((ch) => this.isZhengpianChapter(ch));
+          const targetChapters = zhengpianChapters.length > 0 ? zhengpianChapters : chapterContexts;
+          // 按季遍历时按时间先后排序；仅取正片子分类时保持原顺序
+          const orderedChapters = zhengpianChapters.length > 0
+            ? targetChapters
+            : targetChapters.slice().sort((a, b) => this.seasonOrderKey(a.title) - this.seasonOrderKey(b.title));
+          for (const ch of orderedChapters) {
+            try {
+              const seasonEpisodes = [];
+              let pageNum = 0;
+              let hasNext = true;
+              while (hasNext) {
+                const chapterPayload = {
+                  has_cache: 1,
+                  page_params: {
+                    req_from: "web_vsite",
+                    page_id: "vsite_episode_list",
+                    page_type: "detail_operation",
+                    id_type: "1",
+                    page_size: "",
+                    cid: id,
+                    vid: "",
+                    lid: "",
+                    page_num: "",
+                    page_context: this.buildChapterPageContext(id, ch.title, pageNum),
+                    detail_page_type: "1"
+                  }
+                };
+                const chapterResponse = await httpPost(episodesUrl, JSON.stringify(chapterPayload), { headers });
+                if (!chapterResponse || !chapterResponse.data) break;
+                const chapterData = typeof chapterResponse.data === "string" ? JSON.parse(chapterResponse.data) : chapterResponse.data;
+                if (chapterData.ret !== 0 || !chapterData.data) break;
+                hasNext = false;
+                let pageItemCount = 0;
+                if (chapterData.data.module_list_datas) {
+                  for (const moduleListData of chapterData.data.module_list_datas) {
+                    for (const moduleData of moduleListData.module_datas) {
+                      const hasNextFlag = moduleData.module_params && moduleData.module_params.has_next;
+                      if (hasNextFlag === true || hasNextFlag === "true") hasNext = true;
+                      if (moduleData.item_data_lists && moduleData.item_data_lists.item_datas) {
+                        for (const item of moduleData.item_data_lists.item_datas) {
+                          if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
+                            pageItemCount++;
+                            seasonEpisodes.push({
+                              vid: item.item_params.vid,
+                              title: item.item_params.title,
+                              unionTitle: item.item_params.union_title || item.item_params.title,
+                              order: parseInt(item.item_params.episode_on_chapter, 10) || 0
+                            });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                if (pageItemCount === 0) break;
+                pageNum++;
+              }
+              // 单季内按集序号排序，再合并(跨季按 vid 去重)
+              seasonEpisodes.sort((a, b) => a.order - b.order);
+              for (const ep of seasonEpisodes) {
+                if (seenVids.has(ep.vid)) continue;
+                seenVids.add(ep.vid);
+                allEpisodes.push({
+                  vid: ep.vid,
+                  title: ep.title,
+                  unionTitle: ep.unionTitle
+                });
+              }
+            } catch (error) {
+              log("error", `[tencent] 分季分集请求失败: ${error.message}`);
             }
           }
         }
@@ -352,7 +481,7 @@ export default class TencentSource extends BaseSource {
           return [];
         }
 
-        log("info", `[tencent] 从初始响应中提取到 ${allEpisodes.length} 集`);
+        log("info", `[tencent] 共获取 ${allEpisodes.length} 集(含多季合并)`);
       } else {
         log("info", `[tencent] 找到 ${tabs.length} 个分页`);
 
@@ -455,7 +584,7 @@ export default class TencentSource extends BaseSource {
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processTencentAnimes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
-          const eps = await this.getEpisodes(anime.mediaId);
+          const eps = await this.getEpisodes(anime.mediaId, anime.chapterContexts);
           let links = [];
 
           for (let i = 0; i < eps.length; i++) {

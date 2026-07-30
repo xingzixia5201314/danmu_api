@@ -252,6 +252,14 @@ export const componentsCssContent = /* css */ `
     margin-bottom: 8px;
     padding: 5px;
     border-radius: 4px;
+    /* 视口外日志行跳过布局与绘制，使大日志量下的排版成本只与可见行数相关；占位高度取单行日志的实测高度，已渲染过的行由浏览器记忆实际尺寸 */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 31px;
+}
+
+/* 与当前筛选分类不匹配的日志行隐藏，筛选切换复用已构建的 DOM */
+.log-entry.log-entry-hidden {
+    display: none;
 }
 
 .log-entry.info { color: #4fc3f7; }
@@ -394,6 +402,16 @@ export const componentsCssContent = /* css */ `
 }
 
 /* 模态框 */
+html.modal-open {
+    overflow: hidden;
+}
+
+body.modal-open {
+    position: fixed;
+    width: 100%;
+    overflow: hidden;
+}
+
 .modal {
     display: none;
     position: fixed;

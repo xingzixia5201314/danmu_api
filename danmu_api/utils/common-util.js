@@ -269,15 +269,15 @@ export function getExplicitSeasonNumber(text) {
  * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-export function titleMatches(title, query, parsedSeason = null) {
+export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false) {
   if (title == null || query == null) return false;
 
   const titleText = String(title);
   const queryText = String(query);
   if (!titleText || !queryText) return false;
 
-  // 策略1：严格模式仅允许头部或完全匹配
-  if (globals.strictTitleMatch) return strictTitleMatch(titleText, queryText);
+  // 策略1：严格模式仅允许头部或完全匹配（forceNonStrict 为 true 时跳过，用于偏好记录等场景）
+  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText);
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
   const tagFilter = globals.titleNoiseFilter || null;
@@ -431,8 +431,13 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
   // 4) 尾部阿拉伯数字（如"某某 2" 或 "某某2"，但不超过2位）
   const trailingNumber = titleWithoutYear.match(/(?:^|\s|[^\d])(\d{1,2})$/);
   if (trailingNumber) {
+    const season = parseInt(trailingNumber[1], 10);
+    // 尾部"00"等不合法的季号不视为季数标识（如"机动战士高达00"）
+    if (season === 0) {
+      return { season: null, baseTitle: titleWithoutYear };
+    }
     return {
-      season: parseInt(trailingNumber[1], 10),
+      season,
       baseTitle: titleWithoutYear.slice(0, titleWithoutYear.lastIndexOf(trailingNumber[1])).trim(),
     };
   }

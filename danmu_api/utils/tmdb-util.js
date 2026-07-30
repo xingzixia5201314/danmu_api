@@ -216,6 +216,16 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
   if (globals.useBangumiData) {
     const localMatches = await searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
     if (localMatches && localMatches.length > 0) {
+      // 按精确度排序：将正好匹配检索词的条目排在前面，避免子串混淆（如 "机动战士高达00" 匹配到 "机动战士高达0079"）
+      if (localMatches.length > 1) {
+        localMatches.sort((a, b) => {
+          const aExact = a.titles.some(t => t === cleanTitle);
+          const bExact = b.titles.some(t => t === cleanTitle);
+          if (aExact && !bExact) return -1;
+          if (!aExact && bExact) return 1;
+          return 0;
+        });
+      }
       const m = localMatches[0]; // 取第一个最佳匹配
       const displayTitle = m.titles.find(t => t && t.includes(cleanTitle)) || m.titles[1] || m.title;
       const jaOriginalTitle = m.title; // Bangumi Data 的主标题就是原名

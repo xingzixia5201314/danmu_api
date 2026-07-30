@@ -542,7 +542,7 @@ export class Envs {
    * @returns {RegExp|null} 全局正则，显式设为空时返回 null（禁用）
    */
   static resolveTitleNoiseFilter() {
-    const defaultPattern = '[（(](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版)[）)]';
+    const defaultPattern = '[（(\\[](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）]';
     const raw = this.get('TITLE_NOISE_FILTER', '', 'string').trim();
     const hasKey = (this.env && 'TITLE_NOISE_FILTER' in this.env)
                 || (typeof process !== 'undefined' && 'TITLE_NOISE_FILTER' in process.env);
@@ -638,7 +638,7 @@ export class Envs {
       'TITLE_TO_CHINESE': { category: 'match', type: 'boolean', description: '外语标题转换中文开关' },
       'ANIME_TITLE_SIMPLIFIED': { category: 'match', type: 'boolean', description: '搜索的剧名标题自动繁转简' },
       'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
-      'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。默认值：[（(](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版)[）)]，中英文括号均匹配。设为空值可禁用' },
+      'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。默认值：[（(\\[](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）]，中英文圆方括号均匹配。设为空值可禁用' },
       'AI_BASE_URL': { category: 'match', type: 'text', description: 'AI服务基础URL，不填默认为https://api.openai.com/v1' },
       'AI_MODEL': { category: 'match', type: 'text', description: 'AI模型名称，不填默认为gpt-4o' },
       'AI_API_KEY': { category: 'match', type: 'text', description: 'AI服务API密钥，默认为空，需手动填写' },
