@@ -33,7 +33,7 @@ export const HTML_TEMPLATE = /* html */ `
     <script>
         try {
             const storedTheme = localStorage.getItem('logvar_ui_theme');
-            const supportedThemes = ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'lavender', 'mist', 'terminal'];
+            const supportedThemes = ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'mist', 'terminal', 'lavender'];
             if (supportedThemes.includes(storedTheme)) document.body.dataset.theme = storedTheme;
         } catch (error) {
             // localStorage may be unavailable in restricted browser contexts.
@@ -88,8 +88,33 @@ export const HTML_TEMPLATE = /* html */ `
                     <p style="color: #666; font-size: 12px; margin-top: 5px;">* 设置将保存在浏览器本地存储中，清除网页的‘本地存储空间’或者输入框中留空并保存可恢复默认</p>
                 </div>
 
-                <p style="color: #666; margin-bottom: 20px;">当前生效的环境变量配置</p>
-                <div class="preview-area" id="preview-area"></div>
+                <p class="preview-description">当前生效的环境变量配置</p>
+                <div class="preview-toolbar">
+                    <nav class="preview-categories" id="preview-categories" aria-label="配置分类"></nav>
+                    <div class="preview-search">
+                        <input
+                            type="text"
+                            id="preview-search-input"
+                            placeholder="搜索键名、值或说明"
+                            aria-label="搜索配置"
+                            autocomplete="off"
+                            oninput="handlePreviewSearch(event)"
+                        >
+                        <button
+                            type="button"
+                            class="preview-search-clear"
+                            id="preview-search-clear"
+                            onclick="clearPreviewSearch()"
+                            title="清除搜索"
+                            aria-label="清除搜索"
+                            hidden
+                        >&times;</button>
+                    </div>
+                </div>
+                <div class="preview-status" id="preview-status" aria-live="polite"></div>
+                <div class="preview-area" id="preview-area" aria-live="polite">
+                    <p class="text-gray">正在加载配置...</p>
+                </div>
             </div>
 
             <!-- 日志查看 -->
@@ -209,12 +234,12 @@ export const HTML_TEMPLATE = /* html */ `
 
             <!-- 系统配置 -->
             <div class="section" id="env-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                <div class="env-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <div>
                         <h2 style="margin: 0;">环境变量配置</h2>
                         <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">vercel/netlify/edgeone平台修改变量后需要重新部署</p>
                 </div>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="env-toolbar-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary config-transfer-btn" onclick="exportSystemConfig()" title="下载当前环境变量配置文件">
                         <span class="config-transfer-icon" aria-hidden="true">📤</span> 导出配置
                     </button>
@@ -285,14 +310,29 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 </div>
 
-                <div class="env-categories">
-                    <button class="category-btn active" onclick="switchCategory('api', event)">🔗 API配置</button>
-                    <button class="category-btn" onclick="switchCategory('source', event)">📜 源配置</button>
-                    <button class="category-btn" onclick="switchCategory('match', event)">🔍 匹配配置</button>
-                    <button class="category-btn" onclick="switchCategory('danmu', event)">🔣 弹幕配置</button>
-                    <button class="category-btn" onclick="switchCategory('cache', event)">💾 缓存配置</button>
-                    <button class="category-btn" onclick="switchCategory('system', event)">⚙️ 系统配置</button>
+                <div class="preview-toolbar env-config-toolbar">
+                    <nav class="preview-categories" id="env-categories" aria-label="系统配置分类"></nav>
+                    <div class="preview-search">
+                        <input
+                            type="text"
+                            id="env-search-input"
+                            placeholder="搜索键名、值或说明"
+                            aria-label="搜索系统配置"
+                            autocomplete="off"
+                            oninput="handleEnvSearch(event)"
+                        >
+                        <button
+                            type="button"
+                            class="preview-search-clear"
+                            id="env-search-clear"
+                            onclick="clearEnvSearch()"
+                            title="清除搜索"
+                            aria-label="清除搜索"
+                            hidden
+                        >&times;</button>
+                    </div>
                 </div>
+                <div class="preview-status" id="env-search-status" aria-live="polite"></div>
 
                 <div class="theme-settings" id="theme-settings" hidden>
                     <div class="theme-settings-copy">
@@ -321,14 +361,14 @@ export const HTML_TEMPLATE = /* html */ `
                         <button type="button" role="radio" class="theme-option" data-theme-option="aurora" aria-checked="false" onclick="selectTheme('aurora')" title="极光青">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #164a4a"></i><i style="background: #d49a3a"></i><i style="background: #dfe8e6"></i></span><span class="theme-option-label">极光青</span>
                         </button>
-                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="薰衣紫">
-                            <span class="theme-swatches" aria-hidden="true"><i style="background: #4c3e69"></i><i style="background: #3f806b"></i><i style="background: #ebe9f0"></i></span><span class="theme-option-label">薰衣紫</span>
-                        </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="mist" aria-checked="false" onclick="selectTheme('mist')" title="晨雾灰">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #40566b"></i><i style="background: #a94f42"></i><i style="background: #e7ebef"></i></span><span class="theme-option-label">晨雾灰</span>
                         </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="terminal" aria-checked="false" onclick="selectTheme('terminal')" title="终端绿">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #050706"></i><i style="background: #4faf75"></i><i style="background: #1d231f"></i></span><span class="theme-option-label">终端绿</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="经典默认">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #1a2980"></i><i style="background: #26d0ce"></i><i style="background: #a0b9e8"></i></span><span class="theme-option-label">经典默认</span>
                         </button>
                     </div>
                 </div>

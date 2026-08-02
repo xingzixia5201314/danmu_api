@@ -3,7 +3,6 @@ import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
 import TencentSource from "./tencent.js";
@@ -368,18 +367,31 @@ export default class DandanSource extends BaseSource {
 
           // 相似度高于10%时，对每个关联作品单独判断是否符合展开条件：
           // 关联作品标题含季度信息（避免范围发散），或初始搜索结果不少于25个（API25个结果上限，用相关作品突破）
-          if (similarity >= 0.1 && details.relateds && Array.isArray(details.relateds) && canExpandRelateds) {
+          if (similarity >= 0.1 && details.relateds && Array.isArray(details.relateds)) {
             for (const rel of details.relateds) {
               const hasSeason = extractSeasonNumberFromAnimeTitle(rel.animeTitle).season !== null;
               if (!existingIds.has(rel.animeId) && (hasSeason || initialCount >= 25)) {
                 existingIds.add(rel.animeId);
-                queue.push({
-                  animeId: rel.animeId,
-                  animeTitle: rel.animeTitle,
-                  imageUrl: rel.imageUrl,
-                  rating: rel.rating || 0,
-                  isRelated: true // 标记动态挖掘出的条目为相关作品
-                });
+                // 关联作品追加到sourceAnimes供跨季扩展感知
+                if (!sourceAnimes.some(a => a.animeId === rel.animeId)) {
+                  sourceAnimes.push({
+                    animeId: rel.animeId,
+                    animeTitle: rel.animeTitle,
+                    title: rel.animeTitle,
+                    imageUrl: rel.imageUrl,
+                    rating: rel.rating || 0,
+                    isRelated: true
+                  });
+                }
+                if (canExpandRelateds) {
+                  queue.push({
+                    animeId: rel.animeId,
+                    animeTitle: rel.animeTitle,
+                    imageUrl: rel.imageUrl,
+                    rating: rel.rating || 0,
+                    isRelated: true // 标记动态挖掘出的条目为相关作品
+                  });
+                }
               }
             }
           }
@@ -540,11 +552,8 @@ export default class DandanSource extends BaseSource {
 
   formatComments(comments) {
     return comments.map(c => {
-      // 已经被实时抓取的其它源弹幕，略过复杂的 Dandan 转换，进行繁转简处理
+      // 已经被实时抓取的其它源弹幕，略过复杂的 Dandan 转换。
       if (c.isRealTimePulled) {
-        if (globals.danmuSimplifiedTraditional === 'simplified' && c.m) {
-          return { ...c, m: simplized(c.m) };
-        }
         return c;
       }
 
@@ -558,8 +567,7 @@ export default class DandanSource extends BaseSource {
           const decimalColor = r * 256 * 256 + g * 256 + b;
           return `${platform}${decimalColor}`;
         })}`,
-        // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
-        m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.m) : c.m,
+        m: c.m,
       };
     });
   }

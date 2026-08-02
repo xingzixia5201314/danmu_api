@@ -269,7 +269,7 @@ export function getExplicitSeasonNumber(text) {
  * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false) {
+export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false, threshold = 0.8) {
   if (title == null || query == null) return false;
 
   const titleText = String(title);
@@ -351,7 +351,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
       }
     }
 
-    return (matchCount / kw.length) > 0.8;
+    return (matchCount / kw.length) > threshold;
   });
 
   // 年份噪音兜底：前序策略均未命中时，尝试去年份后再次包含匹配
