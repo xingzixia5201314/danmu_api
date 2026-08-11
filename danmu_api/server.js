@@ -23,6 +23,11 @@ import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-
 // 导入 ES module 兼容层（始终加载，但内部会根据需要启用）
 import './esm-shim.cjs';
 
+// 预加载 node-fetch v3：仅在 Node < 20.19.0 等需兼容层的环境实际加载，其他环境为无操作；必须在首个请求前完成，否则 esm-shim 的 require 代理会拒绝同步取用
+if (typeof global.loadNodeFetch === 'function') {
+  await global.loadNodeFetch();
+}
+
 // 构建 CommonJS 环境下才有的全局变量
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

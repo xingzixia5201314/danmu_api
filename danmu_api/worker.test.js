@@ -374,6 +374,21 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '测试', season: 1, episode: 2 }).targetEpisode, 20);
     });
 
+    await t.test('uses the latest open-rule transition for repeated source title and season', () => {
+      const parsed = parseAutoMatchMappingRules([
+        '一念永恒 S01E53->一念永恒 S02E01',
+        '一念永恒 S01E107->一念永恒 S03E01',
+        '一念永恒 S01E166->一念永恒 完结季 S01E01'
+      ].join(';'));
+
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 52 }), null);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 53 }).targetSeason, 2);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 106 }).targetEpisode, 54);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 107 }).targetSeason, 3);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 165 }).targetEpisode, 59);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 166 }).targetTitle, '一念永恒 完结季');
+    });
+
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
       const originalSearch = TencentSource.prototype.search;
       const originalHandleAnimes = TencentSource.prototype.handleAnimes;
@@ -810,6 +825,29 @@ test('worker.js API endpoints', async (t) => {
         timestamp: Date.now()
       });
 
+      const defaultTokenResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        {}, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(defaultTokenResponse.status, 200);
+
+      const customTokenEnv = { TOKEN: 'favorite-user-token' };
+      const publicListResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        customTokenEnv, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(publicListResponse.status, 200);
+
+      const unauthorizedResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/remove', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ keyword: '路由收藏测试' })
+        }),
+        customTokenEnv, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(unauthorizedResponse.status, 401);
+
       const addResponse = await handleRequest(new Request('http://localhost/api/v2/favorite/add', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -834,6 +872,39 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(removeResponse.status, 200);
       assert.equal(Globals.favoriteCache.size, 0);
       assert.equal(Globals.searchCache.has('路由收藏测试_S1'), false);
+    });
+
+    await t.test('favorite API can require ADMIN_TOKEN', async () => {
+      const env = {
+        TOKEN: '87654321',
+        ADMIN_TOKEN: 'favorite-admin-token',
+        FAVORITE_REQUIRE_ADMIN: 'true'
+      };
+      resetFavoriteState(env);
+
+      const publicListResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(publicListResponse.status, 200);
+
+      const userResponse = await handleRequest(
+        new Request('http://localhost/87654321/api/v2/favorite/add', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ keyword: '权限测试' })
+        }),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(userResponse.status, 403);
+      assert.equal((await parseResponse(userResponse)).message, '权限不足');
+
+      const adminResponse = await handleRequest(
+        new Request('http://localhost/favorite-admin-token/api/v2/favorite/list'),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(adminResponse.status, 200);
+      assert.deepEqual((await parseResponse(adminResponse)).favorites, []);
     });
 
     await t.test('manual favorite keeps the search keyword and uses the first result image', async () => {
@@ -924,6 +995,9 @@ test('worker.js API endpoints', async (t) => {
       assert.match(apitestJsContent, /\/api\/v2\/favorite\/remove/);
       assert.match(apitestJsContent, /最近刷新时间：/);
       assert.doesNotMatch(systemSettingsJsContent, /switchCategory\('favorite'\)/);
+      assert.match(systemSettingsJsContent, /const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS'/);
+      assert.match(systemSettingsJsContent, /preventDuplicateSources && selectedSourceTokens\.has\(value\)/);
+      assert.match(systemSettingsJsContent, /String\(element\.dataset\.value \|\| ''\)\.split\('&'\)/);
       assert.doesNotThrow(() => new Function(apitestJsContent));
       assert.doesNotThrow(() => new Function(systemSettingsJsContent));
       assert.doesNotThrow(() => new Function(previewJsContent));
