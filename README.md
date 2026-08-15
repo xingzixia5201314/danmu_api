@@ -36,7 +36,7 @@ LogVar 弹幕 API 服务器
 - [使用 Docker 运行](#使用-docker-运行)
 - [Docker 一键启动 【推荐】](#docker-一键启动-推荐)
 - [部署到 Vercel 【推荐】](#部署到-vercel-推荐)
-- [部署到 Netlify 【推荐】](#部署到-netlify-推荐)
+- [部署到 Netlify](#部署到-netlify)
 - [部署到 腾讯云 edgeone pages](#部署到-腾讯云-edgeone-pages)
 - [部署到 Cloudflare](#部署到-cloudflare)
 - [部署到 Hugging Face Spaces](#部署到-hugging-face-spaces)
@@ -145,7 +145,7 @@ LogVar 弹幕 API 服务器
    ```bash
    npm start
    ```
-   服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
+   服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。Node 服务默认通过 `::` 同时监听 IPv6 和 IPv4；不支持 IPv6 绑定时会自动回退到 `0.0.0.0`。IPv6 地址访问格式为 `http://[IPv6地址]:9321`。若操作系统强制启用了 `IPV6_V6ONLY`，需调整系统网络策略后才能通过同一监听端口接受 IPv4 连接。
    如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
    HTTPS 反向代理应传递 `X-Forwarded-Proto`；无法传递时可设置 `DANMU_API_PUBLIC_PROTO=https`，用于生成正确的对外弹幕链接。
 
@@ -214,6 +214,8 @@ GET http://127.0.0.1:9321/87654321/api/logs
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
+
+   > 容器内服务默认启用 IPv4/IPv6 双栈监听。通过 IPv6 从宿主机访问时，Docker 守护进程及容器网络也需要启用 IPv6；否则仍可正常使用 IPv4。
 
    **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
@@ -306,7 +308,7 @@ GET http://127.0.0.1:9321/87654321/api/logs
   > hk有可能访问不了360或其他源，可以尝试切其他region
 - vercel在国内被墙，请配合代理或绑定自定义域名使用
 
-## 部署到 Netlify 【推荐】
+## 部署到 Netlify
 
 > ⚠️ **风险提示：Netlify 存在封号风险！**
 >
@@ -504,6 +506,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | AI_API_KEY      | 【可选】AI服务的API密钥，用于身份验证，默认为空，需手动填写       |
 | AI_MATCH_PROMPT      | 【可选】AI匹配提示词，用于自定义AI匹配行为，不填提供默认提示词，提示词如下       |
 | USE_BANGUMI_DATA      | 【可选】[Bangumi Data](https://github.com/bangumi-data/bangumi-data) 加速匹配开关，默认值：`false`（关闭），开启后将动画元数据缓存至本地或内存中给源调用，提升动画源的检索与匹配速度并解锁隐藏/区域番剧（本地和Docker部署使用时请先挂载.cache目录获得最佳体验，云部署使用时会将数据缓存至临时内存中如果体验不佳请关闭）       |
+| NIPAPLAY_REPLACE_DANDAN      | 【可选】 [NipaPlay](https://github.com/AimesSoft/NipaPlay-Reload) 弹弹302关联弹幕替代开关（用于 dandan 源），默认为`false`（关闭，使用弹弹原生弹幕），可选值：`true`、`false`。开启后 dandan 源以 nipaplay 弹弹302关联弹幕替代弹弹原生弹幕，因使用的是项目链路获取弹幕所以`1.会丢失弹弹平台弹幕` `2.无法获取下架视频` `3.如果关联中有巴哈姆特平台需要确保能够连通巴哈`       |
 
 ```regex
 # EPISODE_TITLE_FILTER 默认值
@@ -718,8 +721,10 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── log-util.js         # 日志工具
 │       ├── merge-util.js       # 源合并处理工具
 │       ├── migu-util.js        # 咪咕工具
+│       ├── nipaplay-util.js    # NipaPlay 弹弹302关联链接工具
 │       ├── offset-util.js      # 弹幕偏移工具
 │       ├── redis-util.js       # redis工具
+│       ├── server-listen-util.js # IPv4/IPv6 双栈监听与 IPv4 回退工具
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具
 │       └── zh-util.js          # 中文繁简转换工具
@@ -787,6 +792,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 
 ### 特别感谢
 - 开源项目 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere) 提供的[弹弹play开放平台](https://doc.dandanplay.com/open/)接口
+
+- 开源项目 [NipaPlay-Reload](https://github.com/AimesSoft/NipaPlay-Reload) 提供的[弹弹play开放平台](https://doc.dandanplay.com/open/)302关联链接请求授权
 
 - 开源项目 [animeko](https://github.com/open-ani/animeko) 提供的弹幕API
 

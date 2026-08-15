@@ -5,13 +5,13 @@ import { getFavoriteCachesFromRedis, getRedisCaches, judgeRedisValid } from "./u
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
-import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
+import { extendBangumiDownloadLifecycle } from "./utils/bangumi-data-util.js";
 import { Segment } from "./models/dandan-model.js"
 import {
     handleCookieStatus,
@@ -23,20 +23,13 @@ import {
 
 let globals;
 
-async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
+async function handleRequest(req, env, deployPlatform, clientIp) {
   // 加载全局变量和环境变量配置
   globals = Globals.init(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
   const method = req.method;
-
-  //  Bangumi Data 辅助函数，用于判断数据更新
-  const isDataDependentRequest = path.includes('/search') || path.includes('/match') || path.includes('/danmaku');
-
-  if (globals.useBangumiData) {
-      await initBangumiData(deployPlatform, isDataDependentRequest, ctx);
-  }
 
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
@@ -592,7 +585,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
   // POST /api/cache/clear - 清理缓存
   if (path === "/api/cache/clear" && method === "POST") {
-    return handleClearCache();
+    return handleClearCache(req);
   }
 
   // ========== Cookie 管理 API ==========
@@ -754,7 +747,10 @@ export default {
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    return handleRequest(request, env, detectDeployPlatform(env), clientIp, ctx);
+    const response = await handleRequest(request, env, detectDeployPlatform(env), clientIp);
+    // 边缘运行时在响应返回后延长生命周期，容纳可能在途的 Bangumi Data 后台静默下载
+    extendBangumiDownloadLifecycle(ctx);
+    return response;
   },
 };
 

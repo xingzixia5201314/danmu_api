@@ -99,6 +99,8 @@ export async function httpGet(url, options = {}) {
 
   // 从 options 中获取重试次数，默认为 0
   const maxRetries = parseInt(options.retries || '0', 10) || 0;
+  // GET 与 POST 行为保持一致：默认跟随重定向，allow_redirects 为 false 时禁止（用于截获 302 Location）
+  const allow_redirects = options.allow_redirects !== false;
   // 提取允许放行的特定状态码白名单
   const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
   let lastError;
@@ -140,7 +142,8 @@ export async function httpGet(url, options = {}) {
             ...options.headers,
           },
           signal: controller.signal,
-          agent: nodeFetchAgent
+          agent: nodeFetchAgent,
+          redirect: allow_redirects ? 'follow' : 'manual'
         });
       } else {
         // 现代浏览器环境
@@ -149,7 +152,8 @@ export async function httpGet(url, options = {}) {
           headers: {
             ...options.headers,
           },
-          signal: controller.signal
+          signal: controller.signal,
+          redirect: allow_redirects ? 'follow' : 'manual'
         });
       }
 
