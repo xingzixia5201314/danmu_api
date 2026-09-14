@@ -324,11 +324,19 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     margin-bottom: 12px;
 }
 
+.local-danmu-fields[data-batch="true"] {
+    grid-template-columns: minmax(190px, 2fr) repeat(3, minmax(100px, 1fr)) auto;
+}
+
 .local-danmu-fields .form-group {
     display: flex;
     flex-direction: column;
     margin-bottom: 0;
     min-width: 0;
+}
+
+.local-danmu-fields .form-group[hidden] {
+    display: none;
 }
 
 .local-danmu-fields .form-group label {
@@ -360,6 +368,51 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     min-height: 42px;
 }
 
+.local-danmu-batch-preview {
+    margin-top: 12px;
+}
+
+#local-danmu-upload-status {
+    overflow-wrap: anywhere;
+}
+
+.local-danmu-batch-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px minmax(120px, 0.65fr);
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.local-danmu-batch-file {
+    min-width: 0;
+}
+
+.local-danmu-batch-episode {
+    margin: 0;
+}
+
+.local-danmu-batch-status {
+    color: var(--theme-muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .local-danmu-batch-row {
+        grid-template-columns: minmax(0, 1fr) 90px;
+    }
+    .local-danmu-batch-status {
+        grid-column: 1 / -1;
+    }
+}
+
+.local-danmu-search {
+    max-width: 480px;
+    margin: 18px 0 12px;
+}
+
 .local-danmu-group {
     margin-bottom: 12px;
     border: 1px solid var(--theme-border);
@@ -373,6 +426,12 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     cursor: pointer;
     color: var(--theme-text);
     overflow-wrap: anywhere;
+}
+
+.local-danmu-group-actions {
+    display: flex;
+    gap: 8px;
+    margin: 0 16px 8px 34px;
 }
 
 .local-danmu-group > summary::marker {
@@ -434,12 +493,15 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     overflow-wrap: anywhere;
 }
 
-.local-danmu-episode > button {
+.local-danmu-episode-actions {
+    display: flex;
     flex-shrink: 0;
+    gap: 8px;
 }
 
 @media (max-width: 960px) {
-    .local-danmu-fields {
+    .local-danmu-fields,
+    .local-danmu-fields[data-batch="true"] {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .local-danmu-name-field,
@@ -887,6 +949,7 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-top: 14px;
     margin-bottom: 12px;
     flex-wrap: wrap;
     gap: 8px;
@@ -1894,11 +1957,6 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     padding-bottom: 0;
 }
 
-.record-timestamp::before {
-    content: '\\1F550';
-    font-size: 14px;
-}
-
 .record-params {
     background: var(--theme-panel-strong);
     border-radius: var(--app-radius-card-sm);
@@ -2415,7 +2473,9 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     color: var(--theme-muted);
     transition: all 0.22s var(--app-ease-smooth);
     margin-bottom: 14px;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .btn-back:hover {

@@ -867,14 +867,10 @@ function renderValueInput(item) {
             </div>
 
             \${currentKey === 'MERGE_SOURCE_PAIRS' ? \`
-            <div style="margin-top: 15px; margin-bottom: 8px;">
-                <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
-                    \${uiIcon('bar-chart')} 查看最近数据
-                </button>
+            <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                \${renderRecentDataButton()}
             </div>
-            <div id="recent-data-panel" class="recent-data-panel">
-                <div id="recent-data-list"></div>
-            </div>
+            \${renderRecentDataPanel()}
             \` : ''}
         \`;
 
@@ -897,7 +893,7 @@ function renderValueInput(item) {
         container.innerHTML = \`
             <label>映射配置</label>
             <textarea id="map-bulk-value" rows="6" placeholder="原值->映射值;原值2->映射值2">\${escapeHtml(value || '')}</textarea>
-            <button type="button" class="btn btn-secondary" onclick="parseBulkMapItems()">解析并更新列表</button>
+            <button type="button" class="btn btn-secondary" onclick="parseBulkMapItems()">\${uiIcon('refresh-cw')} 解析并更新列表</button>
             <div class="map-container" id="map-container">
                 \${mapItems.map((item, index) => \`
                     <div class="map-item" data-index="\${index}">
@@ -914,15 +910,11 @@ function renderValueInput(item) {
                     <button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>
                 </div>
             </div>
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <button type="button" class="btn btn-primary" onclick="addMapItem()">添加映射项</button>
-                <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
-                    \${uiIcon('bar-chart')} 查看最近数据
-                </button>
+            <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <button type="button" class="btn btn-primary" onclick="addMapItem()">\${uiIcon('plus')} 添加映射项</button>
+                \${renderRecentDataButton('btn btn-primary')}
             </div>
-            <div id="recent-data-panel" class="recent-data-panel">
-                <div id="recent-data-list"></div>
-            </div>
+            \${renderRecentDataPanel()}
         \`;
 
         bindMapInputSync();
@@ -936,6 +928,8 @@ function renderValueInput(item) {
         const isDanmuOffset = currentKey === 'DANMU_OFFSET';
 		const isCustomMergeRules = currentKey === 'CUSTOM_MERGE_RULES';
         const offsetSources = item && item.sources ? item.sources : [];
+        const isTitleFilter = currentKey === 'ANIME_TITLE_FILTER' || currentKey === 'EPISODE_TITLE_FILTER' || currentKey === 'TITLE_NOISE_FILTER';
+        const recentDataBlock = isTitleFilter ? \`<div style="margin-top: 8px; display: flex; justify-content: flex-end;">\${renderRecentDataButton()}</div>\${renderRecentDataPanel()}\` : '';
 
         if (isColorPool) {
             // 自定义颜色池专用编辑界面
@@ -980,18 +974,13 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值</label>
                 <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒 或 剧名/S01/E01@来源%:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
-                <div style="margin-top: 8px; display: flex; gap: 10px;">
+                <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <button type="button" class="btn btn-primary btn-sm" id="offset-rule-toggle" onclick="toggleOffsetRulePanel()">
-                        添加规则
+                        \${uiIcon('plus')} 添加规则
                     </button>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
-                        \${uiIcon('bar-chart')} 查看最近数据
-                    </button>
+                    \${renderRecentDataButton()}
                 </div>
-                <div id="recent-data-panel" class="recent-data-panel">
-                    <div class="form-help" style="margin: 0 0 8px 0;">点击下方按钮可快捷填入规则表单：</div>
-                    <div id="recent-data-list"></div>
-                </div>
+                \${renderRecentDataPanel('点击下方按钮可快捷填入规则表单：')}
                 <div id="offset-rule-panel" class="offset-rule-panel">
                     <div class="form-help" style="margin: 0 0 8px 0;">季和集不填则对所有季/集生效</div>
                     <div class="offset-form-row">
@@ -1098,18 +1087,13 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值</label>
                 <textarea id="text-value" placeholder="格式：副源 -> 主源 | 路由规则 或 副源 × 主源" rows="\${rows}" class="text-monospace">\${value || ''}</textarea>
-                <div style="margin-top: 8px; display: flex; gap: 10px;">
+                <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <button type="button" class="btn btn-primary btn-sm" id="merge-rule-toggle" onclick="toggleMergeRulePanel()">
-                        添加规则
+                        \${uiIcon('plus')} 添加规则
                     </button>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
-                        \${uiIcon('bar-chart')} 查看最近数据
-                    </button>
+                    \${renderRecentDataButton()}
                 </div>
-                <div id="recent-data-panel" class="recent-data-panel">
-                    <div class="form-help" style="margin: 0 0 8px 0;">点击下方按钮可快捷填入规则表单：</div>
-                    <div id="recent-data-list"></div>
-                </div>
+                \${renderRecentDataPanel('点击下方按钮可快捷填入规则表单：')}
                 <div id="merge-rule-panel" class="offset-rule-panel">
                     <div class="offset-form-row">
                         <div style="flex: 1; min-width: 120px;">
@@ -1153,11 +1137,13 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值 *</label>
                 <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
+                \${recentDataBlock}
             \`;
         } else {
             container.innerHTML = \`
                 <label>变量值 *</label>
                 <input type="text" id="text-value" placeholder="例如: localhost" value="\${value}" required>
+                \${recentDataBlock}
             \`; 
         }
     }
@@ -1422,7 +1408,7 @@ function toggleOffsetRulePanel() {
         const isHidden = getComputedStyle(panel).display === 'none';
         panel.style.display = isHidden ? 'block' : 'none';
         const btn = document.getElementById('offset-rule-toggle');
-        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+        if (btn) btn.innerHTML = isHidden ? uiIcon('chevron-up') + ' 收起' : uiIcon('plus') + ' 添加规则';
     }
 }
 
@@ -1524,7 +1510,7 @@ function toggleMergeRulePanel() {
         const isHidden = getComputedStyle(panel).display === 'none';
         panel.style.display = isHidden ? 'block' : 'none';
         const btn = document.getElementById('merge-rule-toggle');
-        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+        if (btn) btn.innerHTML = isHidden ? uiIcon('chevron-up') + ' 收起' : uiIcon('plus') + ' 添加规则';
     }
 }
 
@@ -1651,9 +1637,8 @@ function updateTagStates() {
 
         if (isMergeMode) {
             // [合并模式逻辑]
-            // SOURCE_ORDER / PLATFORM_ORDER 中已经添加过的源不能再次加入。
-            // MERGE_SOURCE_PAIRS 保留同一源参与不同合并组的能力。
-            if (stagingTokens.has(value) || (preventDuplicateSources && selectedSourceTokens.has(value))) {
+            // 仅禁止同一合并组内重复：已选项需保持可选取，才能把已选源组合成合并组。
+            if (stagingTokens.has(value)) {
                 shouldDisable = true;
             }
         } else {
@@ -3081,6 +3066,21 @@ function toggleMapping(btnEl) {
 const RECENT_DATA_PAGE_SIZE = 5;
 let recentAnimeCacheData = []; // 最近数据完整缓存
 let recentAnimeDisplayedCount = 0; // 最近数据已显示条数
+
+// 查看最近数据按钮：各配置页共用；className 用于与同行操作按钮保持同一尺寸
+function renderRecentDataButton(className = 'btn btn-primary btn-sm') {
+    return \`<button type="button" class="\${className}" onclick="fetchAndShowRecentData()">\${uiIcon('bar-chart')} 查看最近数据</button>\`;
+}
+
+// 查看最近数据折叠面板：hint 传入时作为面板内的提示文案
+function renderRecentDataPanel(hint) {
+    return \`
+        <div id="recent-data-panel" class="recent-data-panel">
+            \${hint ? \`<div class="form-help" style="margin: 0 0 8px 0;">\${hint}</div>\` : ''}
+            <div id="recent-data-list"></div>
+        </div>
+    \`;
+}
 
 // 快捷数据面板业务逻辑
 async function fetchAndShowRecentData() {
